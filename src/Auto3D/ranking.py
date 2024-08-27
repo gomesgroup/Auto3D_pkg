@@ -5,6 +5,7 @@ Finding 3D structures that satisfy the input requirement.
 import os
 import logging
 import pandas as pd
+from tqdm import tqdm
 from rdkit import Chem
 from typing import List
 from Auto3D.utils import filter_unique
@@ -26,7 +27,7 @@ class ranking(object):
         None
     '''
     def __init__(self, input_path,
-                 out_path, threshold, k=False, window=False):
+                 out_path, threshold, cpus=4, k=False, window=False):
         self.input_path = input_path
         self.out_path = out_path
         self.threshold = threshold
@@ -37,6 +38,7 @@ class ranking(object):
                                      51: 'Sb', 52: 'Te', 53: 'I'}
         self.k = k
         self.window = window
+        self.cpus = cpus
 
     @staticmethod
     def similar(name, names):
@@ -73,7 +75,8 @@ class ranking(object):
 
         df2 = df_group.sort_values(by=['energies'])
         
-        out_mols_ = filter_unique(list(df2["mols"]), self.threshold)
+        out_mols_ = filter_unique(list(df2["mols"]), self.cpus, self.threshold)
+
         if k < len(out_mols_):
             out_mols = out_mols_[:k]
         else:
@@ -143,7 +146,7 @@ class ranking(object):
 
         df = pd.DataFrame({"names": names, "energies": energies, "mols": mols})
         df2 = df.groupby("names")
-        for group_name in df2.indices:
+        for group_name in tqdm(df2.indices, desc='Gather results ...'):
             group = df2.get_group(group_name)
 
             if self.k:

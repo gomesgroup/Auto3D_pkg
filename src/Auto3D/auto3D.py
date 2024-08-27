@@ -148,7 +148,7 @@ def optim_rank_wrapper(args, queue, logging_queue, gpu_idx:int) -> List[Chem.Mol
         k = args.k
         window = args.window
         rank_engine = ranking(optimized_og,
-                              output, duplicate_threshold, k=k, window=window)
+                              output, duplicate_threshold, cpus=args.mpi_np,k=k, window=window)
         conformers.append(rank_engine.run())
 
         # Housekeeping

@@ -11,6 +11,7 @@ import re
 import glob
 import torch
 import collections
+import concurrent.futures
 from collections import defaultdict, OrderedDict
 import shutil
 from tqdm import tqdm
@@ -427,9 +428,7 @@ def check_connectivity(mol:Chem.Mol) -> bool:
                     return False
     return True
 
-
-
-def filter_unique(mols, crit=0.3):
+def filter_unique(mols, cpus=4, crit=0.3):
     """Remove structures that are very similar.
        Remove unconverged structures.
     
@@ -440,16 +439,44 @@ def filter_unique(mols, crit=0.3):
     """
 
     #Remove unconverged structures
+    # for mol in tqdm(mols, desc='Checking connectivity and convergence'):
+
+    # Parallelization
+    chunk_size = cpus
+    with concurrent.futures.ProcessPoolExecutor(max_workers=chunk_size) as executor:
+        futures = []
+        connectivity_test = []
+        # Initial batch
+        for i in range(chunk_size):
+            try:
+                future = executor.submit(check_connectivity, mols[i])
+                futures.append(future)
+            except:
+                break
+        # As tasks complete, submit new tasks one-by-one, passing to the machine that just finished the task
+        for i in range(chunk_size, len(mols)):
+            # Wait for the first future to complete
+            done, _ = concurrent.futures.wait(futures, return_when=concurrent.futures.FIRST_COMPLETED)
+            # Obtain result from the completed future, process it if necessary
+            for fut in done:
+                connectivity_test.append(fut.result())
+                futures.remove(fut)
+                # Submit a new task
+                future = executor.submit(check_connectivity, mols[i])
+                futures.append(future)
+        # Wait for all remaining tasks 
+        for future in concurrent.futures.as_completed(futures):
+            connectivity_test.append(future.result())
+    
     mols_ = []
-    for mol in mols:
-        # convergence_flag = str(mol.data['Converged']).lower() == "true"
+    for mol, has_valid_bonds in zip(mols, connectivity_test):
         convergence_flag = mol.GetProp('Converged').lower() == "true"
         has_valid_bonds = check_connectivity(mol)
         if convergence_flag and has_valid_bonds:
             mols_.append(mol)
     mols = mols_
-
-    #Remove similar structures
+    
+    # Remove similar structures
     unique_mols = []
     for mol_i in mols:
         unique = True
