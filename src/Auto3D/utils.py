@@ -25,6 +25,7 @@ from rdkit.Chem.rdMolDescriptors import CalcNumUnspecifiedAtomStereoCenters
 from rdkit.Chem import rdMolDescriptors
 from typing import List, Tuple, Dict, Union, Optional, Callable
 from Auto3D.utils_file import guess_file_type
+import pandas as pd
 
 #CODATA 2018 energy conversion factor
 hartree2ev = 27.211386245988
@@ -467,14 +468,13 @@ def filter_unique(mols, cpus=4, crit=0.3):
         # Wait for all remaining tasks 
         for future in concurrent.futures.as_completed(futures):
             connectivity_test.append(future.result())
-    
-    mols_ = []
-    for mol, has_valid_bonds in zip(mols, connectivity_test):
-        convergence_flag = mol.GetProp('Converged').lower() == "true"
-        has_valid_bonds = check_connectivity(mol)
-        if convergence_flag and has_valid_bonds:
-            mols_.append(mol)
-    mols = mols_
+
+    df = pd.DataFrame([{'mol': m} for m in mols])
+    df['converged'] = df['mol'].apply(lambda mol: mol.GetProp('Converged').lower() == "true")
+    df['has_valid_bonds'] = connectivity_test
+    df_filtered = df[df['converged'] & df['has_valid_bonds']]
+    mols = df_filtered['mol'].tolist()
+
     
     # Remove similar structures
     unique_mols = []
