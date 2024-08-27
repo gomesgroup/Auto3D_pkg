@@ -444,30 +444,24 @@ def filter_unique(mols, cpus=4, crit=0.3):
 
     # Parallelization
     chunk_size = cpus
+    connectivity_test = []
     with concurrent.futures.ProcessPoolExecutor(max_workers=chunk_size) as executor:
-        futures = []
-        connectivity_test = []
-        # Initial batch
-        for i in range(chunk_size):
-            try:
-                future = executor.submit(check_connectivity, mols[i])
-                futures.append(future)
-            except:
-                break
-        # As tasks complete, submit new tasks one-by-one, passing to the machine that just finished the task
-        for i in range(chunk_size, len(mols)):
-            # Wait for the first future to complete
-            done, _ = concurrent.futures.wait(futures, return_when=concurrent.futures.FIRST_COMPLETED)
-            # Obtain result from the completed future, process it if necessary
-            for fut in done:
-                connectivity_test.append(fut.result())
-                futures.remove(fut)
-                # Submit a new task
-                future = executor.submit(check_connectivity, mols[i])
-                futures.append(future)
-        # Wait for all remaining tasks 
+        futures = {executor.submit(check_connectivity, mol): mol for mol in mols}
+        
         for future in concurrent.futures.as_completed(futures):
-            connectivity_test.append(future.result())
+            try:
+                result = future.result()
+                connectivity_test.append(result)
+            except Exception as exc:
+                print(f'Generated an exception: {exc}')
+                connectivity_test.append(False)  # Append False for failed connectivity test
+    
+    if len(connectivity_test) != len(mols):
+        # We will have to process this in series :(
+        connectivity_test = []
+        for mol in mols:
+            has_valid_bonds = check_connectivity(mol)
+            connectivity_test.append(has_valid_bonds)     
 
     df = pd.DataFrame([{'mol': m} for m in mols])
     df['converged'] = df['mol'].apply(lambda mol: mol.GetProp('Converged').lower() == "true")
@@ -475,7 +469,6 @@ def filter_unique(mols, cpus=4, crit=0.3):
     df_filtered = df[df['converged'] & df['has_valid_bonds']]
     mols = df_filtered['mol'].tolist()
 
-    
     # Remove similar structures
     unique_mols = []
     for mol_i in mols:
